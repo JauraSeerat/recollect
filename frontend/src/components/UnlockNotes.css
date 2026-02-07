@@ -1,0 +1,172 @@
+.unlock-notes {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 20px;
+  }
+  
+  .unlock-content {
+    background: white;
+    border-radius: 16px;
+    padding: 48px 40px;
+    max-width: 450px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    text-align: center;
+  }
+  
+  .unlock-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    margin: 0 auto 24px;
+  }
+  
+  .unlock-content h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    color: #333;
+  }
+  
+  .unlock-content > p {
+    margin: 0 0 32px 0;
+    color: #666;
+    font-size: 15px;
+  }
+  
+  .unlock-form {
+    margin-bottom: 32px;
+  }
+  
+  .password-input-group {
+    position: relative;
+    margin-bottom: 16px;
+  }
+  
+  .password-input-group input {
+    width: 100%;
+    padding: 16px 50px 16px 20px;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    font-size: 16px;
+    transition: all 0.2s;
+  }
+  
+  .password-input-group input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+  }
+  
+  .password-input-group input:disabled {
+    background: #f8f9fa;
+    cursor: not-allowed;
+  }
+  
+  .toggle-password {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    transition: color 0.2s;
+  }
+  
+  .toggle-password:hover {
+    color: #333;
+  }
+  
+  .btn-unlock {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .btn-unlock:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+  }
+  
+  .btn-unlock:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  
+  .unlock-help {
+    padding-top: 24px;
+    border-top: 1px solid #e0e0e0;
+    text-align: left;
+  }
+  
+  .unlock-help p {
+    margin: 8px 0;
+    font-size: 14px;
+    color: #666;
+    line-height: 1.6;
+  }
+  
+  .unlock-help strong {
+    color: #333;
+    font-weight: 600;
+  }
+  
+  @media (max-width: 768px) {
+    .unlock-content {
+      padding: 32px 24px;
+    }
+  
+    .unlock-icon {
+      width: 100px;
+      height: 100px;
+    }
+  
+    .unlock-icon svg {
+      width: 48px;
+      height: 48px;
+    }
+  
+    .unlock-content h2 {
+      font-size: 20px;
+    }
+  }

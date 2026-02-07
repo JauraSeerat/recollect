@@ -1,0 +1,144 @@
+:root {
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --danger-color: #dc3545;
+    --warning-color: #ffc107;
+    --info-color: #17a2b8;
+    --light-color: #f8f9fa;
+    --dark-color: #343a40;
+    --sidebar-bg: #2c3e50;
+    --sidebar-text: #ecf0f1;
+    --content-bg: #ffffff;
+    --border-color: #dee2e6;
+    --hover-bg: #e9ecef;
+    --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--light-color);
+    color: var(--dark-color);
+    line-height: 1.6;
+  }
+  
+  code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+      monospace;
+  }
+  
+  #root {
+    min-height: 100vh;
+  }
+  
+  /* Scrollbar styles */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: var(--light-color);
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: var(--secondary-color);
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--dark-color);
+  }
+  
+  /* Button reset */
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    outline: none;
+  }
+  
+  /* Input reset */
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+    outline: none;
+  }
+  
+  /* Link reset */
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+  
+  /* Utility classes */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+  }
+  
+  .text-center {
+    text-align: center;
+  }
+  
+  .mt-1 { margin-top: 0.5rem; }
+  .mt-2 { margin-top: 1rem; }
+  .mt-3 { margin-top: 1.5rem; }
+  .mt-4 { margin-top: 2rem; }
+  
+  .mb-1 { margin-bottom: 0.5rem; }
+  .mb-2 { margin-bottom: 1rem; }
+  .mb-3 { margin-bottom: 1.5rem; }
+  .mb-4 { margin-bottom: 2rem; }
+  
+  .p-1 { padding: 0.5rem; }
+  .p-2 { padding: 1rem; }
+  .p-3 { padding: 1.5rem; }
+  .p-4 { padding: 2rem; }
+  
+  /* Animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+  
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+  
+  /* Toast notifications */
+  .toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+  }

@@ -7,3 +7,7 @@ psycopg2-binary
 python-multipart
 pydantic
 boto3
+aiosqlite
+Pillow
+easyocr
+opencv-python-headless

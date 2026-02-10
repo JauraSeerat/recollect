@@ -137,10 +137,16 @@ async def get_user_by_id(user_id: str):
 
 # ==================== ENTRY OPERATIONS ====================
 
+
 async def create_entry(user_id: str, content: str, title: str = None, 
                       subject: str = "General", entry_date: str = None):
     """Create a new note entry"""
-    if not entry_date:
+    
+    # Convert string date to date object
+    if entry_date:
+        if isinstance(entry_date, str):
+            entry_date = datetime.strptime(entry_date, '%Y-%m-%d').date()
+    else:
         entry_date = datetime.now().date()
     
     query = """
@@ -157,7 +163,7 @@ async def create_entry(user_id: str, content: str, title: str = None,
             "content": content,
             "title": title,
             "subject": subject,
-            "entry_date": entry_date
+            "entry_date": entry_date  # Now it's a date object, not string
         }
     )
     return result

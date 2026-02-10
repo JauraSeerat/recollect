@@ -31,7 +31,10 @@ app = FastAPI(title="Notes App API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+    "https://pacific-quietude-production-ddaf.up.railway.app",
+    # "http://localhost:5173",  # for local frontend development
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

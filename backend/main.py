@@ -13,15 +13,20 @@ import storage
 import os
 import uuid
 from datetime import datetime
+import easyocr
+# Global variables at the top
+OCR_AVAILABLE = False
+reader = None
+
 
 # Import OCR if available
-try:
-    import easyocr
-    OCR_AVAILABLE = True
-    reader = easyocr.Reader(['en'])
-except:
-    OCR_AVAILABLE = False
-    print("⚠️  EasyOCR not available - OCR features disabled")
+# try:
+#     import easyocr
+#     OCR_AVAILABLE = True
+#     reader = easyocr.Reader(['en'])
+# except:
+#     OCR_AVAILABLE = False
+#     print("⚠️  EasyOCR not available - OCR features disabled")
 
 # Initialize FastAPI
 app = FastAPI(title="Notes App API")
@@ -42,13 +47,31 @@ app.add_middleware(
 
 # ==================== STARTUP/SHUTDOWN ====================
 
+# @app.on_event("startup")
+# async def startup():
+#     """Initialize database on startup"""
+#     await db.connect_db()
+#     await db.create_tables()
+#     print("🚀 Server started successfully")
+
 @app.on_event("startup")
 async def startup():
-    """Initialize database on startup"""
+    """Initialize database and OCR on startup"""
+    global OCR_AVAILABLE, reader
+    
     await db.connect_db()
     await db.create_tables()
     print("🚀 Server started successfully")
-
+    
+    # Pre-load EasyOCR (downloads models once)
+    try:
+        print("🔄 Loading EasyOCR models (first time: 3-5 min)...")
+        reader = easyocr.Reader(['en'], gpu=False)
+        OCR_AVAILABLE = True
+        print("✅ EasyOCR loaded and ready!")
+    except Exception as e:
+        print(f"⚠️ EasyOCR failed to load: {e}")
+        OCR_AVAILABLE = False
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -208,7 +231,7 @@ async def get_subjects(user_id: str):
 
 # ==================== UPLOAD ROUTES ====================
 
-@app.post("/api/upload")
+@app.post("/api/upload/image")
 async def upload_file(
     file: UploadFile = File(...),
     user_id: str = None
@@ -267,12 +290,46 @@ async def get_media(user_id: str, filename: str):
 
 # ==================== OCR ROUTES ====================
 
+# @app.post("/api/ocr/extract")
+# async def extract_text_from_image(file: UploadFile = File(...)):
+#     """Extract text from image using OCR"""
+#     if not OCR_AVAILABLE:
+#         raise HTTPException(
+#             status_code=503, 
+#             detail="OCR service not available"
+#         )
+    
+#     try:
+#         # Save temporarily
+#         temp_path = f"/tmp/{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+        
+#         with open(temp_path, "wb") as f:
+#             f.write(await file.read())
+        
+#         # Extract text
+#         result = reader.readtext(temp_path)
+#         extracted_text = ' '.join([detection[1] for detection in result])
+        
+#         # Clean up
+#         os.remove(temp_path)
+        
+#         return {
+#             "extracted_text": extracted_text,
+#             "status": "success"
+#         }
+        
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=500, 
+#             detail=f"OCR failed: {str(e)}"
+#         )
+
 @app.post("/api/ocr/extract")
 async def extract_text_from_image(file: UploadFile = File(...)):
     """Extract text from image using OCR"""
-    if not OCR_AVAILABLE:
+    if not OCR_AVAILABLE or reader is None:
         raise HTTPException(
-            status_code=503, 
+            status_code=503,
             detail="OCR service not available"
         )
     
@@ -283,7 +340,7 @@ async def extract_text_from_image(file: UploadFile = File(...)):
         with open(temp_path, "wb") as f:
             f.write(await file.read())
         
-        # Extract text
+        # Use pre-loaded reader (fast!)
         result = reader.readtext(temp_path)
         extracted_text = ' '.join([detection[1] for detection in result])
         
@@ -297,15 +354,13 @@ async def extract_text_from_image(file: UploadFile = File(...)):
         
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail=f"OCR failed: {str(e)}"
         )
-
-
 @app.post("/api/ocr/extract-multiple")
 async def extract_text_from_multiple(files: List[UploadFile] = File(...)):
     """Extract text from multiple images"""
-    if not OCR_AVAILABLE:
+    if not OCR_AVAILABLE or reader is None:
         raise HTTPException(
             status_code=503,
             detail="OCR service not available"
@@ -316,27 +371,23 @@ async def extract_text_from_multiple(files: List[UploadFile] = File(...)):
     
     for idx, file in enumerate(files):
         try:
-            # Save temporarily
             temp_path = f"/tmp/{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
             
             with open(temp_path, "wb") as f:
                 f.write(await file.read())
             
-            # Extract text
+            # Use pre-loaded reader
             result = reader.readtext(temp_path)
             extracted_text = ' '.join([detection[1] for detection in result])
             
-            # Clean up
             os.remove(temp_path)
             
-            # Add to results
             results.append({
                 "filename": file.filename,
                 "text": extracted_text,
                 "success": True
             })
             
-            # Add to combined text
             combined_text += f"\n\n📷 From {file.filename}:\n{extracted_text}"
             
         except Exception as e:
@@ -352,6 +403,57 @@ async def extract_text_from_multiple(files: List[UploadFile] = File(...)):
         "results": results,
         "status": "success"
     }
+
+# @app.post("/api/ocr/extract-multiple")
+# async def extract_text_from_multiple(files: List[UploadFile] = File(...)):
+#     """Extract text from multiple images"""
+#     if not OCR_AVAILABLE:
+#         raise HTTPException(
+#             status_code=503,
+#             detail="OCR service not available"
+#         )
+    
+#     results = []
+#     combined_text = ""
+    
+#     for idx, file in enumerate(files):
+#         try:
+#             # Save temporarily
+#             temp_path = f"/tmp/{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+            
+#             with open(temp_path, "wb") as f:
+#                 f.write(await file.read())
+            
+#             # Extract text
+#             result = reader.readtext(temp_path)
+#             extracted_text = ' '.join([detection[1] for detection in result])
+            
+#             # Clean up
+#             os.remove(temp_path)
+            
+#             # Add to results
+#             results.append({
+#                 "filename": file.filename,
+#                 "text": extracted_text,
+#                 "success": True
+#             })
+            
+#             # Add to combined text
+#             combined_text += f"\n\n📷 From {file.filename}:\n{extracted_text}"
+            
+#         except Exception as e:
+#             results.append({
+#                 "filename": file.filename,
+#                 "text": "",
+#                 "success": False,
+#                 "error": str(e)
+#             })
+    
+#     return {
+#         "combined_text": combined_text.strip(),
+#         "results": results,
+#         "status": "success"
+#     }
 
 
 # ==================== ROOT ====================

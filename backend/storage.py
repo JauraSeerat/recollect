@@ -32,19 +32,8 @@ else:
     s3_client = None
     print("⚠️  R2 not configured - using local storage")
 
-
 def upload_to_cloud(file_bytes: bytes, object_name: str, content_type: str = None) -> str:
-    """
-    Upload file to Cloudflare R2
-    
-    Args:
-        file_bytes: File content as bytes
-        object_name: Path in bucket (e.g., 'user123/image.jpg')
-        content_type: MIME type (auto-detected if None)
-    
-    Returns:
-        Public URL of uploaded file
-    """
+    """Upload file to R2 and return presigned URL"""
     if not R2_ENABLED:
         raise Exception("R2 storage not configured")
     
@@ -60,11 +49,15 @@ def upload_to_cloud(file_bytes: bytes, object_name: str, content_type: str = Non
             ContentType=content_type
         )
         
-        # Return public URL
-        if R2_PUBLIC_URL:
-            public_url = f"{R2_PUBLIC_URL}/{object_name}"
-        else:
-            public_url = f"{R2_ENDPOINT}/{R2_BUCKET}/{object_name}"
+        # Generate long-lived presigned URL (1 year)
+        public_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': R2_BUCKET,
+                'Key': object_name
+            },
+            ExpiresIn=31536000  # 1 year
+        )
         
         print(f"✅ Uploaded to R2: {object_name}")
         return public_url
@@ -72,6 +65,46 @@ def upload_to_cloud(file_bytes: bytes, object_name: str, content_type: str = Non
     except ClientError as e:
         print(f"❌ Error uploading to R2: {e}")
         raise
+
+# def upload_to_cloud(file_bytes: bytes, object_name: str, content_type: str = None) -> str:
+#     """
+#     Upload file to Cloudflare R2
+    
+#     Args:
+#         file_bytes: File content as bytes
+#         object_name: Path in bucket (e.g., 'user123/image.jpg')
+#         content_type: MIME type (auto-detected if None)
+    
+#     Returns:
+#         Public URL of uploaded file
+#     """
+#     if not R2_ENABLED:
+#         raise Exception("R2 storage not configured")
+    
+#     if not content_type:
+#         content_type = get_content_type(object_name)
+    
+#     try:
+#         # Upload to R2
+#         s3_client.put_object(
+#             Bucket=R2_BUCKET,
+#             Key=object_name,
+#             Body=file_bytes,
+#             ContentType=content_type
+#         )
+        
+#         # Return public URL
+#         if R2_PUBLIC_URL:
+#             public_url = f"{R2_PUBLIC_URL}/{object_name}"
+#         else:
+#             public_url = f"{R2_ENDPOINT}/{R2_BUCKET}/{object_name}"
+        
+#         print(f"✅ Uploaded to R2: {object_name}")
+#         return public_url
+        
+#     except ClientError as e:
+#         print(f"❌ Error uploading to R2: {e}")
+#         raise
 
 
 def delete_from_cloud(object_name: str) -> bool:

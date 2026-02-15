@@ -45,11 +45,12 @@ async def disconnect_db():
 async def create_tables():
     """Create all database tables"""
     
-    # Users table
+    # Users table WITH password
     await database.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
+            password_hash TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -98,19 +99,33 @@ async def create_tables():
 
 # ==================== USER OPERATIONS ====================
 
-async def create_user(username: str):
+async def create_user(username: str, password_hash: str = None):
     """Create a new user"""
     user_id = str(uuid.uuid4())
     
     query = """
-        INSERT INTO users (user_id, username, created_at)
-        VALUES (:user_id, :username, CURRENT_TIMESTAMP)
+        INSERT INTO users (user_id, username, password_hash, created_at)
+        VALUES (:user_id, :username, :password_hash, CURRENT_TIMESTAMP)
         RETURNING user_id, username, created_at
     """
     
     result = await database.fetch_one(
         query=query,
-        values={"user_id": user_id, "username": username}
+        values={
+            "user_id": user_id,
+            "username": username,
+            "password_hash": password_hash
+        }
+    )
+    return dict(result) if result else None
+
+
+async def get_user_with_password(username: str):
+    """Get user including password hash"""
+    query = "SELECT * FROM users WHERE username = :username"
+    result = await database.fetch_one(
+        query=query,
+        values={"username": username}
     )
     return dict(result) if result else None
 

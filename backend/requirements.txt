@@ -11,3 +11,5 @@ aiosqlite
 Pillow
 easyocr
 opencv-python-headless
+python-jose[cryptography]
+passlib[bcrypt]

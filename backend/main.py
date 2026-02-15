@@ -14,6 +14,8 @@ import os
 import uuid
 from datetime import datetime
 import easyocr
+import auth
+
 # Global variables at the top
 OCR_AVAILABLE = False
 reader = None
@@ -98,6 +100,19 @@ class EntryUpdate(BaseModel):
     title: Optional[str] = None
     subject: Optional[str] = None
 
+class UserSignup(BaseModel):
+    username: str
+    password: str
+
+class UserLoginWithPassword(BaseModel):
+    username: str
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user_id: str
+    username: str
 
 # ==================== HEALTH CHECK ====================
 
@@ -114,18 +129,70 @@ async def health_check():
 
 # ==================== USER ROUTES ====================
 
-@app.post("/api/users/login")
-async def login_user(user: UserLogin):
-    """Login or create user"""
+@app.post("/api/auth/signup", response_model=Token)
+async def signup(user_data: UserSignup):
+    """Register a new user"""
     # Check if user exists
-    existing_user = await db.get_user_by_username(user.username)
-    
+    existing_user = await db.get_user_by_username(user_data.username)
     if existing_user:
-        return existing_user
+        raise HTTPException(status_code=400, detail="Username already exists")
     
-    # Create new user
-    new_user = await db.create_user(user.username)
-    return new_user
+    # Hash password
+    password_hash = auth.hash_password(user_data.password)
+    
+    # Create user
+    user = await db.create_user(
+        username=user_data.username,
+        password_hash=password_hash
+    )
+    
+    # Create access token
+    access_token = auth.create_access_token(
+        data={"user_id": user["user_id"], "username": user["username"]}
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": user["user_id"],
+        "username": user["username"]
+    }
+
+
+@app.post("/api/auth/login", response_model=Token)
+async def login(credentials: UserLoginWithPassword):
+    """Login with username and password"""
+    # Get user with password
+    user = await db.get_user_with_password(credentials.username)
+    
+    if not user or not user.get('password_hash'):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    # Verify password
+    if not auth.verify_password(credentials.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    
+    # Create access token
+    access_token = auth.create_access_token(
+        data={"user_id": user["user_id"], "username": user["username"]}
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": user["user_id"],
+        "username": user["username"]
+    }
+
+
+# Keep old endpoint for backward compatibility (optional)
+@app.post("/api/users/login")
+async def login_user_old(user: UserLogin):
+    """Old login endpoint (no password) - for backward compatibility"""
+    raise HTTPException(
+        status_code=400, 
+        detail="Please use /api/auth/login with password"
+    )
 
 
 @app.get("/api/users/{user_id}")
@@ -137,7 +204,7 @@ async def get_user(user_id: str):
     return user
 
 
-@app.get("/api/users/{user_id}/statistics")
+@app.get("/api/users/{user_id}/stats")
 async def get_user_stats(user_id: str):
     """Get user statistics"""
     return await db.get_user_statistics(user_id)

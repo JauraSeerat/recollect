@@ -40,7 +40,7 @@ app.add_middleware(
     "https://pacific-quietude-production-ddaf.up.railway.app",
     # "http://localhost:5173",  # for local frontend development
     ],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -12,6 +12,79 @@ const api = axios.create({
   withCredentials: true,  // ✅ Changed to true
 });
 
+// Add token to every request
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    console.log('API Request:', config.method?.toUpperCase(), config.url);
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Handle 401 errors
+api.interceptors.response.use(
+  (response) => {
+    console.log('API Response:', response.status, response.config.url);
+    return response;
+  },
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired - logout
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
+      window.location.href = '/';
+    }
+    console.error('Response Error:', error.response?.status, error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
+
+// Auth API
+export const authAPI = {
+  signup: async (username, password) => {
+    const response = await api.post('/api/auth/signup', {
+      username,
+      password
+    });
+    
+    // Store token
+    localStorage.setItem('access_token', response.data.access_token);
+    localStorage.setItem('user', JSON.stringify({
+      user_id: response.data.user_id,
+      username: response.data.username
+    }));
+    
+    return response.data;
+  },
+  
+  login: async (username, password) => {
+    const response = await api.post('/api/auth/login', {
+      username,
+      password
+    });
+    
+    // Store token
+    localStorage.setItem('access_token', response.data.access_token);
+    localStorage.setItem('user', JSON.stringify({
+      user_id: response.data.user_id,
+      username: response.data.username
+    }));
+    
+    return response.data;
+  },
+  
+  logout: () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user');
+  }
+};
+
 // Add request interceptor for debugging
 api.interceptors.request.use(
   (config) => {
@@ -38,10 +111,7 @@ api.interceptors.response.use(
 
 // User API
 export const userAPI = {
-  login: async (username) => {
-    const response = await api.post('/api/users/login', { username });
-    return response.data;
-  },
+  // Remove the old login function
   
   getUser: async (userId) => {
     const response = await api.get(`/api/users/${userId}`);
@@ -49,10 +119,26 @@ export const userAPI = {
   },
   
   getUserStats: async (userId) => {
-    const response = await api.get(`/api/users/${userId}/stats`);
+    const response = await api.get(`/api/users/${userId}/stats`);  // ✅ Fixed endpoint
     return response.data;
   },
 };
+// export const userAPI = {
+//   login: async (username) => {
+//     const response = await api.post('/api/users/login', { username });
+//     return response.data;
+//   },
+  
+//   getUser: async (userId) => {
+//     const response = await api.get(`/api/users/${userId}`);
+//     return response.data;
+//   },
+  
+//   getUserStats: async (userId) => {
+//     const response = await api.get(`/api/users/${userId}/stats`);
+//     return response.data;
+//   },
+// };
 
 // Entry API
 export const entryAPI = {

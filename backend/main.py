@@ -20,7 +20,6 @@ import auth
 OCR_AVAILABLE = False
 reader = None
 
-
 # Import OCR if available
 # try:
 #     import easyocr

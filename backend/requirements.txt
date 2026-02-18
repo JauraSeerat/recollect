@@ -10,3 +10,4 @@ boto3
 aiosqlite
 python-jose[cryptography]
 passlib[bcrypt]
+bcrypt

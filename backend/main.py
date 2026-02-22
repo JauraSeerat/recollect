@@ -289,13 +289,13 @@ async def delete_entry(entry_id: int):
     return {"status": "success"}
 
 
-@app.get("/api/users/{user_id}/entries/search")
+@app.get("/api/users/{user_id}/search")
 async def search_entries(user_id: str, query: str):
     """Search entries"""
     return await db.search_entries(user_id, query)
 
 
-@app.get("/api/users/{user_id}/entries/subject/{subject}")
+@app.get("/api/users/{user_id}/subjects/{subject}/entrie")
 async def get_entries_by_subject(user_id: str, subject: str):
     """Get entries by subject"""
     return await db.get_entries_by_subject(user_id, subject)

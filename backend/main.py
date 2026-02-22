@@ -128,7 +128,18 @@ async def health_check():
 
 
 # ==================== USER ROUTES ====================
-
+@app.post("/api/admin/migrate")
+async def migrate_database():
+    """Add password_hash column to users table"""
+    try:
+        await db.database.execute("""
+            ALTER TABLE users 
+            ADD COLUMN IF NOT EXISTS password_hash TEXT
+        """)
+        return {"status": "success", "message": "Migration complete - password_hash column added"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+        
 @app.post("/api/auth/signup", response_model=Token)
 async def signup(user_data: UserSignup):
     """Register a new user"""

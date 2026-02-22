@@ -13,7 +13,7 @@ import storage
 import os
 import uuid
 from datetime import datetime
-# import easyocr
+import easyocr
 import auth
 
 # Global variables at the top
@@ -67,9 +67,9 @@ async def startup():
     # Pre-load EasyOCR (downloads models once)
     try:
         print("🔄 Loading EasyOCR models (first time: 3-5 min)...")
-        # reader = easyocr.Reader(['en'], gpu=False)
-        reader  = None 
-        OCR_AVAILABLE = False
+        reader = easyocr.Reader(['en'], gpu=False)
+        # reader  = None 
+        OCR_AVAILABLE = True
         print("✅ EasyOCR loaded and ready!")
     except Exception as e:
         print(f"⚠️ EasyOCR failed to load: {e}")

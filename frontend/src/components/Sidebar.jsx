@@ -22,7 +22,7 @@ const Sidebar = ({
     <div className="sidebar">
       <div className="sidebar-header">
         <BookOpen size={32} />
-        <h2>Notes App</h2>
+        <h2>Recollect</h2>
       </div>
 
       <div className="sidebar-user">

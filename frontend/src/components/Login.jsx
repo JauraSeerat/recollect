@@ -85,25 +85,62 @@ function Login({ onLogin }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  // const handleSubmit = async (e) => {
+  //   e.preventDefault();
+  //   setError('');
+  //   setLoading(true);
 
-    try {
-      let userData;
+  //   try {
+  //     let userData;
       
-      if (isSignup) {
-        userData = await authAPI.signup(username, password);
-      } else {
-        userData = await authAPI.login(username, password);
-      }
+  //     if (isSignup) {
+  //       userData = await authAPI.signup(username, password);
+  //     } else {
+  //       userData = await authAPI.login(username, password);
+  //     }
       
-      onLogin(userData);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Authentication failed');
-    } finally {
-      setLoading(false);
+  //     onLogin(userData);
+  //   } catch (err) {
+  //     setError(err.response?.data?.detail || 'Authentication failed');
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+ const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError('');
+  setLoading(true);
+
+  try {
+    let userData;
+    
+    if (isSignup) {
+      userData = await authAPI.signup(username, password);
+      toast.success('Account created successfully!');
+    } else {
+      userData = await authAPI.login(username, password);
+      toast.success('Logged in successfully!');
+    }
+    
+    onLogin(userData);
+  } catch (err) {
+    const errorMessage = err.response?.data?.detail || 'Authentication failed';
+    
+    // ✅ AUTO-SWITCH TO SIGNUP IF USER NOT FOUND
+    if (errorMessage.includes('Invalid username or password')) {
+      setError('Account not found. Please create an account first.');
+      setIsSignup(true); // ← Automatically switch to signup mode
+      toast.error('Account not found. Please sign up.');
+    } else if (errorMessage.includes('Username already exists')) {
+      setError('Username already taken. Please try logging in.');
+      setIsSignup(false); // ← Switch to login mode
+    } else {
+      setError(errorMessage);
+      toast.error(errorMessage);
+    }
+  } finally {
+    setLoading(false);
     }
   };
 

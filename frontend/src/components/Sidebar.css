@@ -82,7 +82,7 @@
   }
   
   .nav-item:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.2);
   }
   
   .nav-item.active {
@@ -102,7 +102,7 @@
   
   .sidebar-footer {
     padding: 12px 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
   }
   
   .sidebar-footer .nav-item {

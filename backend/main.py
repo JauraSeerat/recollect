@@ -3,7 +3,7 @@ Notes App - Main API Server
 FastAPI backend with PostgreSQL and Cloud Storage
 """
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -88,7 +88,7 @@ class UserLogin(BaseModel):
     username: str
 
 class EntryCreate(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     content: str
     title: Optional[str] = None
     subject: Optional[str] = "General"
@@ -114,6 +114,14 @@ class Token(BaseModel):
     user_id: str
     username: str
 
+
+def _ensure_user_access(path_user_id: str, current_user: dict):
+    if path_user_id != current_user["user_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden"
+        )
+
 # ==================== HEALTH CHECK ====================
 
 @app.get("/api/health")
@@ -129,8 +137,16 @@ async def health_check():
 
 # ==================== USER ROUTES ====================
 @app.post("/api/admin/migrate")
-async def migrate_database():
+async def migrate_database(current_user: dict = Depends(auth.get_current_user)):
     """Add password_hash column to users table"""
+    allowed_admins = {
+        username.strip()
+        for username in os.getenv("ADMIN_USERNAMES", "").split(",")
+        if username.strip()
+    }
+    if not allowed_admins or current_user.get("username") not in allowed_admins:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
     try:
         await db.database.execute("""
             ALTER TABLE users 
@@ -143,19 +159,25 @@ async def migrate_database():
 @app.post("/api/auth/signup", response_model=Token)
 async def signup(user_data: UserSignup):
     """Register a new user"""
-    # Check if user exists
-    existing_user = await db.get_user_by_username(user_data.username)
-    if existing_user:
+    if len(user_data.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    try:
+        # Hash password
+        password_hash = auth.hash_password(user_data.password)
+
+        # Create user
+        user = await db.create_user(
+            username=user_data.username.strip(),
+            password_hash=password_hash
+        )
+    except Exception as exc:
+        if db.is_unique_violation(exc):
+            raise HTTPException(status_code=400, detail="Username already exists")
+        raise
+
+    if not user:
         raise HTTPException(status_code=400, detail="Username already exists")
-    
-    # Hash password
-    password_hash = auth.hash_password(user_data.password)
-    
-    # Create user
-    user = await db.create_user(
-        username=user_data.username,
-        password_hash=password_hash
-    )
     
     # Create access token
     access_token = auth.create_access_token(
@@ -174,7 +196,7 @@ async def signup(user_data: UserSignup):
 async def login(credentials: UserLoginWithPassword):
     """Login with username and password"""
     # Get user with password
-    user = await db.get_user_with_password(credentials.username)
+    user = await db.get_user_with_password(credentials.username.strip())
     
     if not user or not user.get('password_hash'):
         raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -207,8 +229,10 @@ async def login_user_old(user: UserLogin):
 
 
 @app.get("/api/users/{user_id}")
-async def get_user(user_id: str):
+async def get_user(user_id: str, current_user: dict = Depends(auth.get_current_user)):
     """Get user by ID"""
+    _ensure_user_access(user_id, current_user)
+
     user = await db.get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -216,19 +240,20 @@ async def get_user(user_id: str):
 
 
 @app.get("/api/users/{user_id}/stats")
-async def get_user_stats(user_id: str):
+async def get_user_stats(user_id: str, current_user: dict = Depends(auth.get_current_user)):
     """Get user statistics"""
+    _ensure_user_access(user_id, current_user)
     return await db.get_user_statistics(user_id)
 
 
 # ==================== ENTRY ROUTES ====================
 
 @app.post("/api/entries")
-async def create_entry(entry: EntryCreate):
+async def create_entry(entry: EntryCreate, current_user: dict = Depends(auth.get_current_user)):
     """Create a new note entry"""
     # Create entry
     entry_id = await db.create_entry(
-        user_id=entry.user_id,
+        user_id=current_user["user_id"],
         content=entry.content,
         title=entry.title,
         subject=entry.subject,
@@ -244,23 +269,30 @@ async def create_entry(entry: EntryCreate):
 
 
 @app.get("/api/users/{user_id}/entries")
-async def get_user_entries(user_id: str):
+async def get_user_entries(user_id: str, current_user: dict = Depends(auth.get_current_user)):
     """Get all entries for a user"""
+    _ensure_user_access(user_id, current_user)
     return await db.get_user_entries(user_id)
 
 
 @app.get("/api/entries/{entry_id}")
-async def get_entry(entry_id: int):
+async def get_entry(entry_id: int, current_user: dict = Depends(auth.get_current_user)):
     """Get a single entry"""
     entry = await db.get_entry(entry_id)
     if not entry:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    if entry.get("user_id") != current_user["user_id"]:
         raise HTTPException(status_code=404, detail="Entry not found")
     return entry
 
 
 @app.put("/api/entries/{entry_id}")
-async def update_entry(entry_id: int, entry: EntryUpdate):
+async def update_entry(entry_id: int, entry: EntryUpdate, current_user: dict = Depends(auth.get_current_user)):
     """Update an entry"""
+    entry_owner = await db.get_entry_owner(entry_id)
+    if not entry_owner or entry_owner.get("user_id") != current_user["user_id"]:
+        raise HTTPException(status_code=404, detail="Entry not found")
+
     await db.update_entry(
         entry_id=entry_id,
         content=entry.content,
@@ -271,12 +303,14 @@ async def update_entry(entry_id: int, entry: EntryUpdate):
 
 
 @app.delete("/api/entries/{entry_id}")
-async def delete_entry(entry_id: int):
+async def delete_entry(entry_id: int, current_user: dict = Depends(auth.get_current_user)):
     """Delete an entry"""
     # Get entry to delete associated media
     entry = await db.get_entry(entry_id)
+    if not entry or entry.get("user_id") != current_user["user_id"]:
+        raise HTTPException(status_code=404, detail="Entry not found")
     
-    if entry and entry.get('media_paths'):
+    if entry.get('media_paths'):
         for media_path in entry['media_paths']:
             # Delete from cloud storage if enabled
             if storage.is_cloud_storage_enabled():
@@ -290,20 +324,23 @@ async def delete_entry(entry_id: int):
 
 
 @app.get("/api/users/{user_id}/search")
-async def search_entries(user_id: str, query: str):
+async def search_entries(user_id: str, query: str, current_user: dict = Depends(auth.get_current_user)):
     """Search entries"""
+    _ensure_user_access(user_id, current_user)
     return await db.search_entries(user_id, query)
 
 
 @app.get("/api/users/{user_id}/subjects/{subject}/entries")
-async def get_entries_by_subject(user_id: str, subject: str):
+async def get_entries_by_subject(user_id: str, subject: str, current_user: dict = Depends(auth.get_current_user)):
     """Get entries by subject"""
+    _ensure_user_access(user_id, current_user)
     return await db.get_entries_by_subject(user_id, subject)
 
 
 @app.get("/api/users/{user_id}/subjects")
-async def get_subjects(user_id: str):
+async def get_subjects(user_id: str, current_user: dict = Depends(auth.get_current_user)):
     """Get all unique subjects for a user"""
+    _ensure_user_access(user_id, current_user)
     return await db.get_user_subjects(user_id)
 
 
@@ -312,7 +349,8 @@ async def get_subjects(user_id: str):
 @app.post("/api/upload/image")
 async def upload_file(
     file: UploadFile = File(...),
-    user_id: str = None
+    user_id: str = None,
+    current_user: dict = Depends(auth.get_current_user),
 ):
     """Upload a file (image) to cloud storage or local disk"""
     
@@ -320,11 +358,8 @@ async def upload_file(
     file_ext = os.path.splitext(file.filename)[1]
     unique_filename = f"{uuid.uuid4()}{file_ext}"
     
-    # Create object name with user folder
-    if user_id:
-        object_name = f"{user_id}/{unique_filename}"
-    else:
-        object_name = unique_filename
+    # Never trust client-provided user_id for storage paths.
+    object_name = f"{current_user['user_id']}/{unique_filename}"
     
     # Read file bytes
     file_bytes = await file.read()
@@ -350,8 +385,14 @@ async def upload_file(
 
 
 @app.get("/api/media/{user_id}/{filename}")
-async def get_media(user_id: str, filename: str):
+async def get_media(
+    user_id: str,
+    filename: str,
+    current_user: dict = Depends(auth.get_current_user),
+):
     """Serve uploaded media files (for local storage only)"""
+    _ensure_user_access(user_id, current_user)
+
     if storage.is_cloud_storage_enabled():
         raise HTTPException(
             status_code=404, 
@@ -403,8 +444,12 @@ async def get_media(user_id: str, filename: str):
 #         )
 
 @app.post("/api/ocr/extract")
-async def extract_text_from_image(file: UploadFile = File(...)):
+async def extract_text_from_image(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(auth.get_current_user),
+):
     """Extract text from image using OCR"""
+    _ = current_user
     if not OCR_AVAILABLE or reader is None:
         raise HTTPException(
             status_code=503,
@@ -436,8 +481,12 @@ async def extract_text_from_image(file: UploadFile = File(...)):
             detail=f"OCR failed: {str(e)}"
         )
 @app.post("/api/ocr/extract-multiple")
-async def extract_text_from_multiple(files: List[UploadFile] = File(...)):
+async def extract_text_from_multiple(
+    files: List[UploadFile] = File(...),
+    current_user: dict = Depends(auth.get_current_user),
+):
     """Extract text from multiple images"""
+    _ = current_user
     if not OCR_AVAILABLE or reader is None:
         raise HTTPException(
             status_code=503,

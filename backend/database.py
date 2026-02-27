@@ -19,6 +19,8 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 if not DATABASE_URL:
     DATABASE_URL = "sqlite:///./notes.db"
 
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
+
 # Create database connection with connection pooling
 if DATABASE_URL.startswith("postgresql"):
     database = Database(DATABASE_URL, min_size=5, max_size=20)
@@ -33,6 +35,9 @@ print(f"📊 Using database: {DATABASE_URL.split('://')[0]}")
 async def connect_db():
     """Connect to database on startup"""
     await database.connect()
+    if IS_SQLITE:
+        # SQLite requires this pragma for foreign-key constraints to work.
+        await database.execute("PRAGMA foreign_keys=ON")
     print("✅ Database connected")
 
 
@@ -44,41 +49,66 @@ async def disconnect_db():
 
 async def create_tables():
     """Create all database tables"""
-    
-    # Users table WITH password
-    await database.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # Notes entries table
-    await database.execute("""
-        CREATE TABLE IF NOT EXISTS notes_entries (
-            id SERIAL PRIMARY KEY,
-            user_id TEXT REFERENCES users(user_id),
-            content TEXT,
-            title TEXT,
-            subject TEXT DEFAULT 'General',
-            entry_date DATE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # Media table
-    await database.execute("""
-        CREATE TABLE IF NOT EXISTS media (
-            id SERIAL PRIMARY KEY,
-            entry_id INTEGER REFERENCES notes_entries(id) ON DELETE CASCADE,
-            media_type TEXT,
-            file_path TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    if IS_SQLITE:
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS notes_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT REFERENCES users(user_id),
+                content TEXT,
+                title TEXT,
+                subject TEXT DEFAULT 'General',
+                entry_date DATE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS media (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_id INTEGER REFERENCES notes_entries(id) ON DELETE CASCADE,
+                media_type TEXT,
+                file_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    else:
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS notes_entries (
+                id SERIAL PRIMARY KEY,
+                user_id TEXT REFERENCES users(user_id),
+                content TEXT,
+                title TEXT,
+                subject TEXT DEFAULT 'General',
+                entry_date DATE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS media (
+                id SERIAL PRIMARY KEY,
+                entry_id INTEGER REFERENCES notes_entries(id) ON DELETE CASCADE,
+                media_type TEXT,
+                file_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
     
     # Create indexes for performance
     try:
@@ -103,21 +133,18 @@ async def create_user(username: str, password_hash: str = None):
     """Create a new user"""
     user_id = str(uuid.uuid4())
     
-    query = """
-        INSERT INTO users (user_id, username, password_hash, created_at)
-        VALUES (:user_id, :username, :password_hash, CURRENT_TIMESTAMP)
-        RETURNING user_id, username, created_at
-    """
-    
-    result = await database.fetch_one(
-        query=query,
+    await database.execute(
+        query="""
+            INSERT INTO users (user_id, username, password_hash, created_at)
+            VALUES (:user_id, :username, :password_hash, CURRENT_TIMESTAMP)
+        """,
         values={
             "user_id": user_id,
             "username": username,
             "password_hash": password_hash
         }
     )
-    return dict(result) if result else None
+    return await get_user_by_id(user_id)
 
 
 async def get_user_with_password(username: str):
@@ -132,7 +159,11 @@ async def get_user_with_password(username: str):
 
 async def get_user_by_username(username: str):
     """Get user by username"""
-    query = "SELECT * FROM users WHERE username = :username"
+    query = """
+        SELECT user_id, username, created_at
+        FROM users
+        WHERE username = :username
+    """
     result = await database.fetch_one(
         query=query,
         values={"username": username}
@@ -142,7 +173,11 @@ async def get_user_by_username(username: str):
 
 async def get_user_by_id(user_id: str):
     """Get user by ID"""
-    query = "SELECT * FROM users WHERE user_id = :user_id"
+    query = """
+        SELECT user_id, username, created_at
+        FROM users
+        WHERE user_id = :user_id
+    """
     result = await database.fetch_one(
         query=query,
         values={"user_id": user_id}
@@ -224,6 +259,17 @@ async def get_entry(entry_id: int):
         return entry
     
     return None
+
+
+async def get_entry_owner(entry_id: int):
+    """Get entry ownership information"""
+    query = """
+        SELECT id, user_id
+        FROM notes_entries
+        WHERE id = :entry_id
+    """
+    result = await database.fetch_one(query=query, values={"entry_id": entry_id})
+    return dict(result) if result else None
 
 
 async def update_entry(entry_id: int, content: str = None, 
@@ -359,7 +405,9 @@ async def get_user_statistics(user_id: str):
     query = """
         SELECT 
             COUNT(*) as total_entries,
-            COUNT(DISTINCT subject) as total_subjects
+            COUNT(DISTINCT subject) as total_subjects,
+            COUNT(DISTINCT entry_date) as unique_days,
+            COALESCE(SUM(LENGTH(COALESCE(content, ''))), 0) as total_characters
         FROM notes_entries
         WHERE user_id = :user_id
     """
@@ -370,5 +418,13 @@ async def get_user_statistics(user_id: str):
     )
     return dict(result) if result else {
         "total_entries": 0,
-        "total_subjects": 0
+        "total_subjects": 0,
+        "unique_days": 0,
+        "total_characters": 0
     }
+
+
+def is_unique_violation(exc: Exception) -> bool:
+    """Best-effort detection for unique-constraint violations across DB engines."""
+    message = str(exc).lower()
+    return "unique constraint" in message or "duplicate key value violates unique constraint" in message

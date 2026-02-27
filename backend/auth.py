@@ -4,13 +4,16 @@ Authentication utilities using JWT
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
-import bcrypt  # ← Use bcrypt directly
+import bcrypt
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
 
 # Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-CHANGE-IN-PRODUCTION-12345")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is required")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 

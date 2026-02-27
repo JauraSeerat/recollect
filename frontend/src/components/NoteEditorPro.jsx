@@ -338,7 +338,7 @@ const NoteEditorPro = ({ user, entry, onSave, onCancel }) => {
               <div className="image-previews-grid">
                 {savedImages.map((path, index) => (
                   <div key={index} className="image-preview-item">
-                    <img src={`/api/media/${entry.id}/${path.split('/').pop()}`} alt="Saved" />
+                    <img src={path} alt="Saved" />
                   </div>
                 ))}
               </div>

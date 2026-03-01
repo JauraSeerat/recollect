@@ -53,7 +53,8 @@ async def create_tables():
         await database.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id TEXT PRIMARY KEY,
-                username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                username TEXT UNIQUE,
                 password_hash TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -83,7 +84,8 @@ async def create_tables():
         await database.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id TEXT PRIMARY KEY,
-                username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                username TEXT UNIQUE,
                 password_hash TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -123,50 +125,82 @@ async def create_tables():
         )
     except:
         pass  # Indexes might already exist
+
+    # Backward-compatible migration for older deployments.
+    try:
+        await database.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT"
+        )
+    except Exception:
+        # SQLite does not support IF NOT EXISTS on ADD COLUMN in older versions.
+        try:
+            await database.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        except Exception:
+            pass
+
+    # Backward-compatible migration from username-based auth to email-based auth.
+    try:
+        await database.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT")
+    except Exception:
+        try:
+            await database.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        except Exception:
+            pass
+
+    try:
+        await database.execute("UPDATE users SET email = username WHERE email IS NULL")
+    except Exception:
+        pass
+
+    try:
+        await database.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+    except Exception:
+        pass
     
     print("✅ Database tables created")
 
 
 # ==================== USER OPERATIONS ====================
 
-async def create_user(username: str, password_hash: str = None):
+async def create_user(email: str, password_hash: str = None):
     """Create a new user"""
     user_id = str(uuid.uuid4())
     
     await database.execute(
         query="""
-            INSERT INTO users (user_id, username, password_hash, created_at)
-            VALUES (:user_id, :username, :password_hash, CURRENT_TIMESTAMP)
+            INSERT INTO users (user_id, email, username, password_hash, created_at)
+            VALUES (:user_id, :email, :username, :password_hash, CURRENT_TIMESTAMP)
         """,
         values={
             "user_id": user_id,
-            "username": username,
+            "email": email,
+            "username": email,
             "password_hash": password_hash
         }
     )
     return await get_user_by_id(user_id)
 
 
-async def get_user_with_password(username: str):
-    """Get user including password hash"""
-    query = "SELECT * FROM users WHERE username = :username"
+async def get_user_with_password(email: str):
+    """Get user including password hash by email"""
+    query = "SELECT * FROM users WHERE LOWER(email) = LOWER(:email)"
     result = await database.fetch_one(
         query=query,
-        values={"username": username}
+        values={"email": email}
     )
     return dict(result) if result else None
 
 
-async def get_user_by_username(username: str):
-    """Get user by username"""
+async def get_user_by_email(email: str):
+    """Get user by email"""
     query = """
-        SELECT user_id, username, created_at
+        SELECT user_id, email, created_at
         FROM users
-        WHERE username = :username
+        WHERE LOWER(email) = LOWER(:email)
     """
     result = await database.fetch_one(
         query=query,
-        values={"username": username}
+        values={"email": email}
     )
     return dict(result) if result else None
 
@@ -174,7 +208,7 @@ async def get_user_by_username(username: str):
 async def get_user_by_id(user_id: str):
     """Get user by ID"""
     query = """
-        SELECT user_id, username, created_at
+        SELECT user_id, email, created_at
         FROM users
         WHERE user_id = :user_id
     """
@@ -183,6 +217,26 @@ async def get_user_by_id(user_id: str):
         values={"user_id": user_id}
     )
     return dict(result) if result else None
+
+
+async def update_user_password(email: str, password_hash: str):
+    """Update password hash by email; returns True if a row was updated."""
+    query = """
+        UPDATE users
+        SET password_hash = :password_hash
+        WHERE LOWER(email) = LOWER(:email)
+    """
+    rows_affected = await database.execute(
+        query=query,
+        values={"email": email, "password_hash": password_hash}
+    )
+    if rows_affected is None:
+        return False
+    if isinstance(rows_affected, int):
+        return rows_affected > 0
+    if isinstance(rows_affected, str):
+        return rows_affected.upper().startswith("UPDATE") and not rows_affected.endswith(" 0")
+    return True
 
 
 # ==================== ENTRY OPERATIONS ====================

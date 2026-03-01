@@ -1,15 +1,16 @@
 .sidebar {
     width: 280px;
     height: 100vh;
-    background-color: var(--sidebar-bg);
-    color: var(--sidebar-text);
+    background: #f8fafc;
+      color: #0f172a;
     display: flex;
     flex-direction: column;
     position: fixed;
     left: 0;
     top: 0;
     z-index: 100;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+    border-right: 1px solid #dbe3ef;
+      box-shadow: 2px 0 8px rgba(15, 23, 42, 0.06);
   }
   
   .sidebar-header {
@@ -17,7 +18,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid #e2e8f0;
   }
   
   .sidebar-header h2 {
@@ -30,7 +31,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid #e2e8f0;
   }
   
   .user-avatar {
@@ -70,7 +71,7 @@
     gap: 12px;
     padding: 12px 16px;
     background: transparent;
-    color: var(--sidebar-text);
+    color: #1e293b;
     border: none;
     border-radius: 8px;
     font-size: 15px;
@@ -82,36 +83,44 @@
   }
   
   .nav-item:hover {
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: #e2e8f0;
   }
   
   .nav-item.active {
-    background-color: rgba(255, 255, 255, 0.15);
+    background: #1d4ed8;
     color: white;
     font-weight: 600;
+    box-shadow: 0 2px 6px rgba(29, 78, 216, 0.25);
   }
   
   .nav-item .badge {
     margin-left: auto;
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: #dbeafe;
+      color: #1e3a8a;
     padding: 2px 8px;
     border-radius: 12px;
     font-size: 12px;
     font-weight: 600;
   }
+.nav-item.active .badge {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
   
   .sidebar-footer {
     padding: 12px 8px;
-    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    border-top: 1px solid #e2e8f0;
   }
   
   .sidebar-footer .nav-item {
-    color: rgba(255, 255, 255, 0.7);
+    color: #b91c1c;
+      border: 1px solid #fecaca;
+      background: #fef2f2;
   }
   
   .sidebar-footer .nav-item:hover {
-    color: white;
-    background-color: rgba(255, 255, 255, 0.1);
+    color: #991b1b;
+      background-color: #fee2e2;
   }
   
   @media (max-width: 768px) {

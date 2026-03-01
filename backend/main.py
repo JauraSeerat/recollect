@@ -12,36 +12,45 @@ import database as db
 import storage
 import os
 import uuid
-from datetime import datetime
-import easyocr
 import auth
+import re
+import httpx
 
-# Global variables at the top
-OCR_AVAILABLE = False
-reader = None
-
-# Import OCR if available
-# try:
-#     import easyocr
-#     OCR_AVAILABLE = True
-#     reader = easyocr.Reader(['en'])
-# except:
-#     OCR_AVAILABLE = False
-#     print("⚠️  EasyOCR not available - OCR features disabled")
+OCR_SERVICE_URL = os.getenv("OCR_SERVICE_URL", "").rstrip("/")
+OCR_TIMEOUT_SECONDS = float(os.getenv("OCR_TIMEOUT_SECONDS", "120"))
 
 # Initialize FastAPI
 app = FastAPI(title="Notes App API")
 
 # CORS Configuration
-# ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+RAW_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,https://pacific-quietude-production-ddaf.up.railway.app",
+    ).split(",")
+    if origin.strip()
+]
+
+ALLOW_ALL_ORIGINS = "*" in RAW_ALLOWED_ORIGINS
+ALLOWED_ORIGINS = [origin for origin in RAW_ALLOWED_ORIGINS if "*" not in origin and origin != "*"]
+
+# Always support localhost/127.0.0.1 on any port for local development.
+origin_regex_parts = [r"https?://(localhost|127\.0\.0\.1)(:\d+)?"]
+
+# Support wildcard origins from env (example: https://*.railway.app).
+for origin in RAW_ALLOWED_ORIGINS:
+    if "*" in origin and origin != "*":
+        escaped = origin.replace(".", r"\.").replace("*", ".*")
+        origin_regex_parts.append(escaped)
+
+ALLOW_ORIGIN_REGEX = "|".join(origin_regex_parts)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-    "https://pacific-quietude-production-ddaf.up.railway.app",
-    # "http://localhost:5173",  # for local frontend development
-    ],
-    allow_credentials=True,
+    allow_origins=["*"] if ALLOW_ALL_ORIGINS else ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOW_ORIGIN_REGEX,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -57,23 +66,10 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
-    """Initialize database and OCR on startup"""
-    global OCR_AVAILABLE, reader
-    
+    """Initialize database on startup"""
     await db.connect_db()
     await db.create_tables()
     print("🚀 Server started successfully")
-    
-    # Pre-load EasyOCR (downloads models once)
-    try:
-        print("🔄 Loading EasyOCR models (first time: 3-5 min)...")
-        reader = easyocr.Reader(['en'], gpu=False)
-        # reader  = None 
-        OCR_AVAILABLE = True
-        print("✅ EasyOCR loaded and ready!")
-    except Exception as e:
-        print(f"⚠️ EasyOCR failed to load: {e}")
-        OCR_AVAILABLE = False
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -85,7 +81,7 @@ async def shutdown():
 # ==================== PYDANTIC MODELS ====================
 
 class UserLogin(BaseModel):
-    username: str
+    email: str
 
 class EntryCreate(BaseModel):
     user_id: Optional[str] = None
@@ -101,18 +97,33 @@ class EntryUpdate(BaseModel):
     subject: Optional[str] = None
 
 class UserSignup(BaseModel):
-    username: str
+    email: str
     password: str
 
 class UserLoginWithPassword(BaseModel):
-    username: str
+    email: str
     password: str
+
+class PasswordResetRequest(BaseModel):
+    email: str
+    new_password: str
 
 class Token(BaseModel):
     access_token: str
     token_type: str
     user_id: str
-    username: str
+    email: str
+
+
+def _normalize_email(value: str) -> str:
+    return value.strip().lower()
+
+
+def _validate_email(value: str) -> str:
+    normalized = _normalize_email(value)
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized):
+        raise HTTPException(status_code=400, detail="Please enter a valid email address")
+    return normalized
 
 
 def _ensure_user_access(path_user_id: str, current_user: dict):
@@ -130,7 +141,8 @@ async def health_check():
     return {
         "status": "healthy",
         "database": "connected",
-        "ocr_available": OCR_AVAILABLE,
+        "ocr_service_configured": bool(OCR_SERVICE_URL),
+        "ocr_service_url": OCR_SERVICE_URL or None,
         "cloud_storage": storage.is_cloud_storage_enabled()
     }
 
@@ -140,11 +152,11 @@ async def health_check():
 async def migrate_database(current_user: dict = Depends(auth.get_current_user)):
     """Add password_hash column to users table"""
     allowed_admins = {
-        username.strip()
-        for username in os.getenv("ADMIN_USERNAMES", "").split(",")
-        if username.strip()
+        _normalize_email(email)
+        for email in os.getenv("ADMIN_EMAILS", os.getenv("ADMIN_USERNAMES", "")).split(",")
+        if email.strip()
     }
-    if not allowed_admins or current_user.get("username") not in allowed_admins:
+    if not allowed_admins or _normalize_email(current_user.get("email", "")) not in allowed_admins:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     try:
@@ -159,6 +171,8 @@ async def migrate_database(current_user: dict = Depends(auth.get_current_user)):
 @app.post("/api/auth/signup", response_model=Token)
 async def signup(user_data: UserSignup):
     """Register a new user"""
+    email = _validate_email(user_data.email)
+
     if len(user_data.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
@@ -168,54 +182,76 @@ async def signup(user_data: UserSignup):
 
         # Create user
         user = await db.create_user(
-            username=user_data.username.strip(),
+            email=email,
             password_hash=password_hash
         )
     except Exception as exc:
         if db.is_unique_violation(exc):
-            raise HTTPException(status_code=400, detail="Username already exists")
+            raise HTTPException(status_code=400, detail="Email already exists")
         raise
 
     if not user:
-        raise HTTPException(status_code=400, detail="Username already exists")
+        raise HTTPException(status_code=400, detail="Email already exists")
     
     # Create access token
     access_token = auth.create_access_token(
-        data={"user_id": user["user_id"], "username": user["username"]}
+        data={"user_id": user["user_id"], "email": user["email"]}
     )
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "user_id": user["user_id"],
-        "username": user["username"]
+        "email": user["email"]
     }
 
 
 @app.post("/api/auth/login", response_model=Token)
 async def login(credentials: UserLoginWithPassword):
-    """Login with username and password"""
+    """Login with email and password"""
+    email = _validate_email(credentials.email)
+
     # Get user with password
-    user = await db.get_user_with_password(credentials.username.strip())
+    user = await db.get_user_with_password(email)
     
     if not user or not user.get('password_hash'):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     
     # Verify password
     if not auth.verify_password(credentials.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     
     # Create access token
     access_token = auth.create_access_token(
-        data={"user_id": user["user_id"], "username": user["username"]}
+        data={"user_id": user["user_id"], "email": user["email"]}
     )
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "user_id": user["user_id"],
-        "username": user["username"]
+        "email": user["email"]
     }
+
+
+@app.post("/api/auth/reset-password")
+async def reset_password(data: PasswordResetRequest):
+    """Reset password by email."""
+    email = _validate_email(data.email)
+
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    existing_user = await db.get_user_with_password(email)
+    if not existing_user:
+        raise HTTPException(status_code=404, detail="User not found for this email")
+
+    new_password_hash = auth.hash_password(data.new_password)
+    updated = await db.update_user_password(email, new_password_hash)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Unable to reset password")
+
+    return {"status": "success", "message": "Password updated successfully"}
 
 
 # Keep old endpoint for backward compatibility (optional)
@@ -224,7 +260,7 @@ async def login_user_old(user: UserLogin):
     """Old login endpoint (no password) - for backward compatibility"""
     raise HTTPException(
         status_code=400, 
-        detail="Please use /api/auth/login with password"
+        detail="Please use /api/auth/login with email and password"
     )
 
 
@@ -409,178 +445,65 @@ async def get_media(
 
 # ==================== OCR ROUTES ====================
 
-# @app.post("/api/ocr/extract")
-# async def extract_text_from_image(file: UploadFile = File(...)):
-#     """Extract text from image using OCR"""
-#     if not OCR_AVAILABLE:
-#         raise HTTPException(
-#             status_code=503, 
-#             detail="OCR service not available"
-#         )
-    
-#     try:
-#         # Save temporarily
-#         temp_path = f"/tmp/{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
-        
-#         with open(temp_path, "wb") as f:
-#             f.write(await file.read())
-        
-#         # Extract text
-#         result = reader.readtext(temp_path)
-#         extracted_text = ' '.join([detection[1] for detection in result])
-        
-#         # Clean up
-#         os.remove(temp_path)
-        
-#         return {
-#             "extracted_text": extracted_text,
-#             "status": "success"
-#         }
-        
-#     except Exception as e:
-#         raise HTTPException(
-#             status_code=500, 
-#             detail=f"OCR failed: {str(e)}"
-#         )
+def _require_ocr_service_url():
+    if not OCR_SERVICE_URL:
+        raise HTTPException(
+            status_code=503,
+            detail="OCR service URL is not configured"
+        )
+
+
+async def _proxy_ocr_request(path: str, files_payload):
+    _require_ocr_service_url()
+    target_url = f"{OCR_SERVICE_URL}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=OCR_TIMEOUT_SECONDS) as client:
+            response = await client.post(target_url, files=files_payload)
+    except httpx.RequestError:
+        raise HTTPException(
+            status_code=503,
+            detail="OCR service is unavailable"
+        )
+
+    if response.status_code >= 400:
+        error_detail = "OCR request failed"
+        try:
+            error_body = response.json()
+            error_detail = error_body.get("detail") or error_body.get("message") or error_detail
+        except Exception:
+            pass
+        raise HTTPException(status_code=response.status_code, detail=error_detail)
+
+    return response.json()
 
 @app.post("/api/ocr/extract")
 async def extract_text_from_image(
     file: UploadFile = File(...),
     current_user: dict = Depends(auth.get_current_user),
 ):
-    """Extract text from image using OCR"""
+    """Proxy single-image OCR request to external OCR service"""
     _ = current_user
-    if not OCR_AVAILABLE or reader is None:
-        raise HTTPException(
-            status_code=503,
-            detail="OCR service not available"
-        )
-    
-    try:
-        # Save temporarily
-        temp_path = f"/tmp/{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
-        
-        with open(temp_path, "wb") as f:
-            f.write(await file.read())
-        
-        # Use pre-loaded reader (fast!)
-        result = reader.readtext(temp_path)
-        extracted_text = ' '.join([detection[1] for detection in result])
-        
-        # Clean up
-        os.remove(temp_path)
-        
-        return {
-            "extracted_text": extracted_text,
-            "status": "success"
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"OCR failed: {str(e)}"
-        )
+    file_bytes = await file.read()
+    files_payload = [
+        ("file", (file.filename or "upload.jpg", file_bytes, file.content_type or "application/octet-stream"))
+    ]
+    return await _proxy_ocr_request("/extract", files_payload)
+
+
 @app.post("/api/ocr/extract-multiple")
 async def extract_text_from_multiple(
     files: List[UploadFile] = File(...),
     current_user: dict = Depends(auth.get_current_user),
 ):
-    """Extract text from multiple images"""
+    """Proxy multi-image OCR request to external OCR service"""
     _ = current_user
-    if not OCR_AVAILABLE or reader is None:
-        raise HTTPException(
-            status_code=503,
-            detail="OCR service not available"
+    files_payload = []
+    for file in files:
+        file_bytes = await file.read()
+        files_payload.append(
+            ("files", (file.filename or "upload.jpg", file_bytes, file.content_type or "application/octet-stream"))
         )
-    
-    results = []
-    combined_text = ""
-    
-    for idx, file in enumerate(files):
-        try:
-            temp_path = f"/tmp/{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
-            
-            with open(temp_path, "wb") as f:
-                f.write(await file.read())
-            
-            # Use pre-loaded reader
-            result = reader.readtext(temp_path)
-            extracted_text = ' '.join([detection[1] for detection in result])
-            
-            os.remove(temp_path)
-            
-            results.append({
-                "filename": file.filename,
-                "text": extracted_text,
-                "success": True
-            })
-            
-            combined_text += f"\n\n📷 From {file.filename}:\n{extracted_text}"
-            
-        except Exception as e:
-            results.append({
-                "filename": file.filename,
-                "text": "",
-                "success": False,
-                "error": str(e)
-            })
-    
-    return {
-        "combined_text": combined_text.strip(),
-        "results": results,
-        "status": "success"
-    }
-
-# @app.post("/api/ocr/extract-multiple")
-# async def extract_text_from_multiple(files: List[UploadFile] = File(...)):
-#     """Extract text from multiple images"""
-#     if not OCR_AVAILABLE:
-#         raise HTTPException(
-#             status_code=503,
-#             detail="OCR service not available"
-#         )
-    
-#     results = []
-#     combined_text = ""
-    
-#     for idx, file in enumerate(files):
-#         try:
-#             # Save temporarily
-#             temp_path = f"/tmp/{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
-            
-#             with open(temp_path, "wb") as f:
-#                 f.write(await file.read())
-            
-#             # Extract text
-#             result = reader.readtext(temp_path)
-#             extracted_text = ' '.join([detection[1] for detection in result])
-            
-#             # Clean up
-#             os.remove(temp_path)
-            
-#             # Add to results
-#             results.append({
-#                 "filename": file.filename,
-#                 "text": extracted_text,
-#                 "success": True
-#             })
-            
-#             # Add to combined text
-#             combined_text += f"\n\n📷 From {file.filename}:\n{extracted_text}"
-            
-#         except Exception as e:
-#             results.append({
-#                 "filename": file.filename,
-#                 "text": "",
-#                 "success": False,
-#                 "error": str(e)
-#             })
-    
-#     return {
-#         "combined_text": combined_text.strip(),
-#         "results": results,
-#         "status": "success"
-#     }
+    return await _proxy_ocr_request("/extract-multiple", files_payload)
 
 
 # ==================== ROOT ====================

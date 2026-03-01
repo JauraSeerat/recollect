@@ -18,6 +18,17 @@ const Sidebar = ({
   setActiveView, 
   onLogout 
 }) => {
+  const maskEmail = (email) => {
+    if (!email || !email.includes('@')) return 'Signed in';
+    const [localPart, domain] = email.split('@');
+    const safeLocal = localPart.length <= 2
+      ? `${localPart[0] || ''}***`
+      : `${localPart.slice(0, 2)}***`;
+    return `${safeLocal}@${domain}`;
+  };
+
+  const userLabel = user?.email ? maskEmail(user.email) : 'Signed in';
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -27,10 +38,10 @@ const Sidebar = ({
 
       <div className="sidebar-user">
         <div className="user-avatar">
-          {user?.username?.charAt(0).toUpperCase()}
+          {userLabel.charAt(0).toUpperCase()}
         </div>
         <div className="user-info">
-          <h3>{user?.username}</h3>
+          <h3>{userLabel}</h3>
           <p>{stats?.total_entries || 0} notes</p>
         </div>
       </div>

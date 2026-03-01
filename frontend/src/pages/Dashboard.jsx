@@ -27,6 +27,15 @@ const Dashboard = ({ user, onLogout }) => {
     loadSubjects();
   }, [user]);
 
+  const handleViewChange = (nextView) => {
+    setActiveView(nextView);
+    if (nextView === 'all') {
+      setEditingNote(null);
+      setSearchQuery('');
+      loadNotes();
+    }
+  };
+
   const loadNotes = async () => {
     setLoading(true);
     try {
@@ -107,7 +116,7 @@ const Dashboard = ({ user, onLogout }) => {
         user={user}
         stats={stats}
         activeView={activeView}
-        setActiveView={setActiveView}
+        setActiveView={handleViewChange}
         onLogout={onLogout}
       />
 
@@ -156,7 +165,7 @@ const Dashboard = ({ user, onLogout }) => {
             onSave={handleSave}
             onCancel={() => {
               setEditingNote(null);
-              setActiveView('all');
+              handleViewChange('all');
             }}
           />
           )}

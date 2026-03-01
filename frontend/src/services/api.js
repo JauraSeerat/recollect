@@ -9,7 +9,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true,  // ✅ Changed to true
+  withCredentials: false,
 });
 
 // Add token to every request
@@ -34,11 +34,16 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response?.status === 401) {
-      // Token expired - logout
+    const isAuthEndpoint =
+      error.config?.url?.includes('/api/auth/login') ||
+      error.config?.url?.includes('/api/auth/signup') ||
+      error.config?.url?.includes('/api/auth/reset-password');
+
+    if (error.response?.status === 401 && !isAuthEndpoint) {
+      // Token expired/invalid while using protected APIs
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
-      window.location.href = '/';
+      window.dispatchEvent(new Event('auth:logout'));
     }
     console.error('Response Error:', error.response?.status, error.response?.data || error.message);
     return Promise.reject(error);
@@ -47,9 +52,9 @@ api.interceptors.response.use(
 
 // Auth API
 export const authAPI = {
-  signup: async (username, password) => {
+  signup: async (email, password) => {
     const response = await api.post('/api/auth/signup', {
-      username,
+      email,
       password
     });
     
@@ -57,15 +62,15 @@ export const authAPI = {
     localStorage.setItem('access_token', response.data.access_token);
     localStorage.setItem('user', JSON.stringify({
       user_id: response.data.user_id,
-      username: response.data.username
+      email: response.data.email
     }));
     
     return response.data;
   },
   
-  login: async (username, password) => {
+  login: async (email, password) => {
     const response = await api.post('/api/auth/login', {
-      username,
+      email,
       password
     });
     
@@ -73,9 +78,17 @@ export const authAPI = {
     localStorage.setItem('access_token', response.data.access_token);
     localStorage.setItem('user', JSON.stringify({
       user_id: response.data.user_id,
-      username: response.data.username
+      email: response.data.email
     }));
     
+    return response.data;
+  },
+
+  resetPassword: async (email, newPassword) => {
+    const response = await api.post('/api/auth/reset-password', {
+      email,
+      new_password: newPassword,
+    });
     return response.data;
   },
   
@@ -84,30 +97,6 @@ export const authAPI = {
     localStorage.removeItem('user');
   }
 };
-
-// Add request interceptor for debugging
-api.interceptors.request.use(
-  (config) => {
-    console.log('API Request:', config.method?.toUpperCase(), config.url);
-    return config;
-  },
-  (error) => {
-    console.error('Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Add response interceptor for debugging
-api.interceptors.response.use(
-  (response) => {
-    console.log('API Response:', response.status, response.config.url);
-    return response;
-  },
-  (error) => {
-    console.error('Response Error:', error.response?.status, error.response?.data || error.message);
-    return Promise.reject(error);
-  }
-);
 
 // User API
 export const userAPI = {

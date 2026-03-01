@@ -10,6 +10,4 @@ boto3
 aiosqlite
 python-jose[cryptography]
 bcrypt
-Pillow
-easyocr
-opencv-python-headless
+httpx

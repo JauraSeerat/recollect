@@ -80,9 +80,9 @@ import { authAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 function Login({ onLogin }) {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSignup, setIsSignup] = useState(false);
+  const [mode, setMode] = useState('login'); // login | signup | reset
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -108,57 +108,56 @@ function Login({ onLogin }) {
   //   }
   // };
 
- const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError('');
-  setLoading(true);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
 
-  try {
-    let userData;
-    
-    if (isSignup) {
-      userData = await authAPI.signup(username, password);
-      toast.success('Account created successfully!');
-    } else {
-      userData = await authAPI.login(username, password);
+    const normalizedEmail = email.trim().toLowerCase();
+
+    try {
+      if (mode === 'signup') {
+        const userData = await authAPI.signup(normalizedEmail, password);
+        toast.success('Account created successfully!');
+        onLogin(userData);
+        return;
+      }
+
+      if (mode === 'reset') {
+        await authAPI.resetPassword(normalizedEmail, password);
+        toast.success('Password updated. Please log in.');
+        setMode('login');
+        setPassword('');
+        return;
+      }
+
+      const userData = await authAPI.login(normalizedEmail, password);
       toast.success('Logged in successfully!');
-    }
-    
-    onLogin(userData);
-  } catch (err) {
-    const errorMessage = err.response?.data?.detail || 'Authentication failed';
-    
-    // ✅ AUTO-SWITCH TO SIGNUP IF USER NOT FOUND
-    if (errorMessage.includes('Invalid username or password')) {
-      setError('Account not found. Please create an account first.');
-      setIsSignup(true); // ← Automatically switch to signup mode
-      toast.error('Account not found. Please sign up.');
-    } else if (errorMessage.includes('Username already exists')) {
-      setError('Username already taken. Please try logging in.');
-      setIsSignup(false); // ← Switch to login mode
-    } else {
+      onLogin(userData);
+    } catch (err) {
+      const errorMessage = err.response?.data?.detail || err.message || 'Authentication failed';
       setError(errorMessage);
       toast.error(errorMessage);
-    }
-  } finally {
-    setLoading(false);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="login-container">
-      <h2>{isSignup ? 'Sign Up' : 'Login'}</h2>
+      <h2>
+        {mode === 'signup' ? 'Sign Up' : mode === 'reset' ? 'Reset Password' : 'Login'}
+      </h2>
       
       {error && <div className="error">{error}</div>}
       
       <form onSubmit={handleSubmit}>
         <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          type="email"
+          placeholder="Email address"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           required
-          minLength={3}
         />
         
         <input
@@ -171,12 +170,34 @@ function Login({ onLogin }) {
         />
         
         <button type="submit" disabled={loading}>
-          {loading ? 'Loading...' : (isSignup ? 'Sign Up' : 'Login')}
+          {loading
+            ? 'Loading...'
+            : mode === 'signup'
+              ? 'Sign Up'
+              : mode === 'reset'
+                ? 'Update Password'
+                : 'Login'}
         </button>
       </form>
-      
-      <button onClick={() => setIsSignup(!isSignup)}>
-        {isSignup ? 'Already have an account? Login' : 'Need an account? Sign Up'}
+
+      <button
+        type="button"
+        onClick={() => {
+          setMode(mode === 'signup' ? 'login' : 'signup');
+          setError('');
+        }}
+      >
+        {mode === 'signup' ? 'Already have an account? Login' : 'Need an account? Sign Up'}
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setMode(mode === 'reset' ? 'login' : 'reset');
+          setError('');
+        }}
+      >
+        {mode === 'reset' ? 'Back to Login' : 'Forgot password?'}
       </button>
     </div>
   );

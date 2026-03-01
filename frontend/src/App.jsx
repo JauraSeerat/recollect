@@ -22,6 +22,15 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const handleAuthLogout = () => {
+      setUser(null);
+      setShowAuth(true);
+    };
+    window.addEventListener('auth:logout', handleAuthLogout);
+    return () => window.removeEventListener('auth:logout', handleAuthLogout);
+  }, []);
+
    // Handle "Get Started" from landing page
   const handleGetStarted = () => {  // ← ADD THIS
     setShowAuth(true);

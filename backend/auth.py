@@ -8,11 +8,14 @@ import bcrypt
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import os
+import secrets
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY environment variable is required")
+    # Dev fallback to keep local auth working; set SECRET_KEY in production.
+    SECRET_KEY = secrets.token_urlsafe(64)
+    print("⚠️ SECRET_KEY not set. Using temporary in-memory key.")
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
@@ -74,10 +77,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     payload = verify_token(token)
     
     user_id = payload.get("user_id")
+    email = payload.get("email") or payload.get("username")
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials"
         )
     
-    return {"user_id": user_id, "username": payload.get("username")}
+    return {"user_id": user_id, "email": email}
